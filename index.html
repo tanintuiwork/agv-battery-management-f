@@ -428,7 +428,7 @@
     <div id="history-show-more" style="display:none; text-align:center; margin-top:14px;">
       <button type="button" class="secondary" id="history-show-more-btn">แสดงเพิ่มเติม</button>
     </div>
-    <p class="storage-note">แถวพื้นหลังเขียวอ่อน = แบตเตอรี่ที่ยังใช้งานอยู่ในรถขณะนี้ (ยังไม่สิ้นสุดรอบการทำงาน) • ค่าเริ่มต้นแสดงเฉพาะวันนี้ กด "แสดงเพิ่มเติม" เพื่อดูย้อนหลัง • ข้อมูลอัปเดตผ่าน Firebase แบบเรียลไทม์</p>
+    <p class="storage-note">แถวพื้นหลังเขียวอ่อน = แบตเตอรี่ที่ยังใช้งานอยู่ในรถขณะนี้ (ยังไม่สิ้นสุดรอบการทำงาน) • แสดงครั้งละ 10 รายการ กด "แสดงเพิ่มเติม" เพื่อดูรายการถัดไป • ข้อมูลอัปเดตผ่าน Firebase แบบเรียลไทม์</p>
   </section>
 </div>
 
@@ -496,7 +496,8 @@
   let state = null;
   let currentView = 'dashboard';
   let pollTimer = null;
-  let historyShowAll = false; // ค่าเริ่มต้น: แสดงเฉพาะวันนี้ ต้องกด "แสดงเพิ่มเติม" ถึงจะเห็นย้อนหลัง
+  const HISTORY_PAGE_SIZE = 10;
+  let historyVisibleCount = HISTORY_PAGE_SIZE;
 
   const pad2 = n => String(n).padStart(2,'0');
   const agvId = n => 'AGV-' + pad2(n);
@@ -1207,20 +1208,18 @@
   function renderHistoryTable(){
     const ongoing = getFilteredOngoing();
     const past = getFilteredHistory();
-
-    const hasExplicitDateFilter = !!(document.getElementById('filter-date-from').value || document.getElementById('filter-date-to').value);
-    const restrictToToday = !historyShowAll && !hasExplicitDateFilter;
-    const pastVisible = restrictToToday ? past.filter(h => isToday(h.endTime || h.timestamp)) : past;
-    const hiddenCount = past.length - pastVisible.length;
+    const allRows = [
+      ...ongoing.map(record => ({ type: 'ongoing', record })),
+      ...past.map(record => ({ type: 'past', record }))
+    ];
+    const visibleRows = allRows.slice(0, historyVisibleCount);
+    const hiddenCount = allRows.length - visibleRows.length;
 
     const el = document.getElementById('history-table-body');
-    if(ongoing.length === 0 && pastVisible.length === 0){
-      const emptyMsg = hiddenCount > 0
-        ? 'วันนี้ยังไม่มีรายการเปลี่ยนแบตเตอรี่ — กด "แสดงเพิ่มเติม" ด้านล่างเพื่อดูประวัติย้อนหลัง'
-        : 'ยังไม่มีประวัติการเปลี่ยนแบตเตอรี่ตามเงื่อนไขนี้';
-      el.innerHTML = `<tr><td colspan="8"><div class="empty-state">${emptyMsg}</div></td></tr>`;
+    if(allRows.length === 0){
+      el.innerHTML = '<tr><td colspan="8"><div class="empty-state">ยังไม่มีประวัติการเปลี่ยนแบตเตอรี่ตามเงื่อนไขนี้</div></td></tr>';
     } else {
-      const ongoingHtml = ongoing.map(h => `
+      el.innerHTML = visibleRows.map(({type, record: h}) => type === 'ongoing' ? `
         <tr class="ongoing-row">
           <td class="muted">${formatDateTime(h.startTime)}</td>
           <td><span class="badge inuse">กำลังใช้งาน</span></td>
@@ -1231,8 +1230,7 @@
           <td class="muted">—</td>
           <td class="muted">—</td>
         </tr>
-      `).join('');
-      const pastHtml = pastVisible.map(h => `
+      ` : `
         <tr>
           <td class="muted">${h.startTime ? formatDateTime(h.startTime) : '—'}</td>
           <td class="muted">${formatDateTime(h.endTime || h.timestamp)}</td>
@@ -1244,14 +1242,13 @@
           <td class="${h.remark ? '' : 'muted'}">${escapeHtml(h.remark || '—')}</td>
         </tr>
       `).join('');
-      el.innerHTML = ongoingHtml + pastHtml;
     }
 
     const showMoreEl = document.getElementById('history-show-more');
     const showMoreBtn = document.getElementById('history-show-more-btn');
     if(hiddenCount > 0){
       showMoreEl.style.display = 'block';
-      showMoreBtn.textContent = `แสดงเพิ่มเติม (+${hiddenCount} รายการ)`;
+      showMoreBtn.textContent = `แสดงเพิ่มเติม (อีก ${Math.min(HISTORY_PAGE_SIZE, hiddenCount)} รายการ)`;
     } else {
       showMoreEl.style.display = 'none';
     }
@@ -1415,20 +1412,22 @@
     document.getElementById('swap-new-battery').addEventListener('change', updateSwapPreview);
     document.getElementById('swap-form').addEventListener('submit', handleSwapSubmit);
 
-    document.getElementById('filter-agv').addEventListener('change', renderHistoryTable);
-    document.getElementById('filter-battery').addEventListener('change', renderHistoryTable);
-    document.getElementById('filter-date-from').addEventListener('change', renderHistoryTable);
-    document.getElementById('filter-date-to').addEventListener('change', renderHistoryTable);
+    ['filter-agv','filter-battery','filter-date-from','filter-date-to'].forEach(id => {
+      document.getElementById(id).addEventListener('change', () => {
+        historyVisibleCount = HISTORY_PAGE_SIZE;
+        renderHistoryTable();
+      });
+    });
     document.getElementById('reset-filters-btn').addEventListener('click', () => {
       document.getElementById('filter-agv').value = '';
       document.getElementById('filter-battery').value = '';
       document.getElementById('filter-date-from').value = '';
       document.getElementById('filter-date-to').value = '';
-      historyShowAll = false;
+      historyVisibleCount = HISTORY_PAGE_SIZE;
       renderHistoryTable();
     });
     document.getElementById('history-show-more-btn').addEventListener('click', () => {
-      historyShowAll = true;
+      historyVisibleCount += HISTORY_PAGE_SIZE;
       renderHistoryTable();
     });
     document.getElementById('export-btn').addEventListener('click', exportToExcel);
