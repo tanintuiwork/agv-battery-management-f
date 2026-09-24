@@ -803,7 +803,7 @@
     if(b.status === 'retired') return '<span class="muted">หยุดใช้งาน (จัดการผ่านเมนู "จัดการแบตเตอรี่")</span>';
     if(b.status === 'charging'){
       const remainLabel = getChargeRemainingLabel(b);
-      if(!isAdmin) return `<div class="muted">${remainLabel || 'กำลังชาร์จ'}</div>`;
+      if(!signedInUser) return `<div class="muted">${remainLabel || 'กำลังชาร์จ'}</div>`;
       return `<div>
         <button type="button" class="btn-xs btn-mark-avail" data-toggle-battery="${b.id}">ทำเครื่องหมายว่าพร้อมใช้งาน</button>
         ${remainLabel ? `<div class="charge-remain">${remainLabel}</div>` : ''}
@@ -873,7 +873,6 @@
     const battery = state.batteries.find(b => b.id === id);
     if(!battery || battery.status === 'in-use') return;
     if(battery.status === 'charging'){
-      if(!isAdmin) return;
       battery.status = 'available';
       battery.chargingStartedAt = null;
     } else if(battery.status === 'available'){
