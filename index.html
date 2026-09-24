@@ -275,13 +275,9 @@
 
 <div class="firebase-login" id="firebase-login" style="display:none">
  <div class="firebase-login-card">
-  <h1>เข้าสู่ระบบ Admin</h1>
-  <p>พนักงานดูข้อมูลได้โดยไม่ต้องเข้าสู่ระบบ</p>
-  <form id="login-form">
-    <label for="login-email">อีเมล</label><input id="login-email" type="email" autocomplete="username" required>
-    <label for="login-password">รหัสผ่าน</label><input id="login-password" type="password" autocomplete="current-password" required>
-    <button type="submit">เข้าสู่ระบบเพื่อจัดการ</button>
-  </form>
+  <h1>เข้าสู่ระบบด้วย Google</h1>
+  <p>ใช้บัญชี Google ของทีมเพื่อบันทึกการเปลี่ยนแบตเตอรี่</p>
+  <button type="button" id="google-login-btn">เข้าสู่ระบบด้วย Google</button>
   <p id="login-error" role="alert"></p>
   <button type="button" class="secondary" id="login-cancel-btn">ยกเลิก</button>
  </div>
@@ -304,7 +300,7 @@
     <span class="sync-dot" id="sync-indicator"></span>
     <span id="sync-text">กำลังเชื่อมต่อ Firebase...</span>
     <button type="button" class="btn-xs" id="refresh-btn">รีเฟรช</button>
-    <button type="button" class="btn-xs" id="admin-login-btn">Admin เข้าสู่ระบบ</button>
+    <button type="button" class="btn-xs" id="admin-login-btn">เข้าสู่ระบบด้วย Google</button>
     <button type="button" class="btn-xs" id="logout-btn" style="display:none">ออกจากระบบ</button>
   </div>
 
@@ -365,7 +361,7 @@
 
       <div class="field">
         <label for="swap-operator">ผู้ทำรายการ</label>
-        <input type="text" id="swap-operator" placeholder="ชื่อ-นามสกุล" required autocomplete="off">
+        <input type="text" id="swap-operator" placeholder="เข้าสู่ระบบด้วย Google ก่อน" required autocomplete="off" readonly>
       </div>
 
       <div class="field">
@@ -600,6 +596,7 @@
   let db = null;
   let auth = null;
   let isAdmin = false;
+  let signedInUser = null;
   let lastSyncedState = null;
   let historyListener = null;
   let historyLoaded = false;
@@ -691,12 +688,16 @@
       setSyncStatus('pending', 'รอ Admin เข้าระบบครั้งแรกเพื่อย้ายข้อมูลจากชีต');
       return;
     }
-    setSyncStatus('ok', 'เชื่อมต่อ Firebase แล้ว • ' + new Date().toLocaleTimeString('th-TH'));
+    setSyncStatus('ok', 'เชื่อมต่อแล้ว • ' + new Date().toLocaleTimeString('th-TH'));
   }
 
   async function saveConfig(historyRecord){
-    if(!isAdmin){
-      showToast('เฉพาะ Admin เท่านั้นที่บันทึกการเปลี่ยนแปลงได้');
+    if(!signedInUser){
+      showToast('กรุณาเข้าสู่ระบบด้วย Google ก่อนบันทึก');
+      return false;
+    }
+    if(!isAdmin && !historyRecord){
+      showToast('เฉพาะ Admin เท่านั้นที่จัดการข้อมูลแบตเตอรี่ได้');
       return false;
     }
     writeQueue = writeQueue.then(async () => {
@@ -1060,7 +1061,7 @@
 
   async function handleSwapSubmit(e){
     e.preventDefault();
-    if(!isAdmin){ showToast('เฉพาะ Admin เท่านั้นที่บันทึกการเปลี่ยนแบตได้'); return; }
+    if(!signedInUser){ showToast('กรุณาเข้าสู่ระบบด้วย Google ก่อนเปลี่ยนแบต'); return; }
     if(isSubmittingSwap) return;
     isSubmittingSwap = true;
     const submitBtn = document.querySelector('#swap-form button[type="submit"]');
@@ -1068,7 +1069,7 @@
 
     const agvSelId = document.getElementById('swap-agv').value;
     const newBatteryId = document.getElementById('swap-new-battery').value;
-    const operator = document.getElementById('swap-operator').value.trim();
+    const operator = (signedInUser.displayName || signedInUser.email || '').trim();
     const remark = document.getElementById('swap-remark').value.trim();
 
     if(!agvSelId || !newBatteryId || !operator){
@@ -1301,6 +1302,11 @@
 
   // ---------- Tabs ----------
   function switchView(view){
+    if(view === 'swap' && !signedInUser){
+      document.getElementById('login-error').textContent = 'เข้าสู่ระบบด้วย Google เพื่อบันทึกการเปลี่ยนแบตเตอรี่';
+      document.getElementById('firebase-login').style.display = 'flex';
+      return;
+    }
     currentView = view;
     document.querySelectorAll('nav.tabs button').forEach(b => b.classList.toggle('active', b.dataset.view === view));
     document.querySelectorAll('section.view').forEach(s => s.classList.toggle('active', s.id === 'view-' + view));
@@ -1320,11 +1326,11 @@
     const logoutBtn = document.getElementById('logout-btn');
     const manageBtn = document.getElementById('manage-battery-btn');
     const swapTab = document.querySelector('nav.tabs [data-view="swap"]');
-    if(adminBtn) adminBtn.style.display = isAdmin ? 'none' : '';
-    if(logoutBtn) logoutBtn.style.display = isAdmin ? '' : 'none';
+    if(adminBtn) adminBtn.style.display = signedInUser ? 'none' : '';
+    if(logoutBtn) logoutBtn.style.display = signedInUser ? '' : 'none';
     if(manageBtn) manageBtn.style.display = isAdmin ? '' : 'none';
-    if(swapTab) swapTab.style.display = isAdmin ? '' : 'none';
-    if(!isAdmin && currentView === 'swap'){
+    if(swapTab) swapTab.style.display = signedInUser ? '' : 'none';
+    if(!signedInUser && currentView === 'swap'){
       currentView = 'dashboard';
       document.querySelectorAll('nav.tabs button').forEach(b => b.classList.toggle('active', b.dataset.view === 'dashboard'));
       document.querySelectorAll('section.view').forEach(s => s.classList.toggle('active', s.id === 'view-dashboard'));
@@ -1346,7 +1352,7 @@
       firebase.initializeApp(FIREBASE_CONFIG);
       auth = firebase.auth();
       db = firebase.database();
-      await auth.setPersistence(firebase.auth.Auth.Persistence.SESSION);
+      await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
     }catch(err){
       document.getElementById('login-error').textContent = 'ตั้งค่า Firebase ไม่ถูกต้อง: ' + err.message;
       return;
@@ -1357,32 +1363,26 @@
       document.getElementById('login-error').textContent = '';
       document.getElementById('firebase-login').style.display = 'flex';
     });
-    document.getElementById('login-cancel-btn').addEventListener('click', () => {
-      document.getElementById('firebase-login').style.display = 'none';
-    });
-    document.getElementById('login-form').addEventListener('submit', async e => {
-      e.preventDefault();
+    document.getElementById('google-login-btn').addEventListener('click', async () => {
       document.getElementById('login-error').textContent = '';
       try{
-        await auth.signInWithEmailAndPassword(
-          document.getElementById('login-email').value.trim(),
-          document.getElementById('login-password').value
-        );
+        await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
       }catch(err){
-        document.getElementById('login-error').textContent = 'เข้าสู่ระบบไม่สำเร็จ ตรวจอีเมล/รหัสผ่านหรือสิทธิ์ใน Firebase';
+        document.getElementById('login-error').textContent = 'เข้าสู่ระบบ Google ไม่สำเร็จ: ' + (err.code === 'auth/unauthorized-domain' ? 'เพิ่มโดเมนเว็บใน Firebase Authentication → Settings → Authorized domains' : err.message);
       }
+    });
+    document.getElementById('login-cancel-btn').addEventListener('click', () => {
+      document.getElementById('firebase-login').style.display = 'none';
     });
     document.getElementById('logout-btn').addEventListener('click', () => auth.signOut());
     auth.onAuthStateChanged(async user => {
       const login = document.getElementById('firebase-login');
-      if(user && user.uid !== FIREBASE_ADMIN_UID){
-        login.style.display = 'flex';
-        document.getElementById('login-error').textContent = 'บัญชีนี้ไม่ได้รับสิทธิ์ Admin';
-        await auth.signOut();
-        return;
-      }
-      isAdmin = !!user;
-      if(isAdmin) login.style.display = 'none';
+      signedInUser = user || null;
+      isAdmin = !!user && user.uid === FIREBASE_ADMIN_UID;
+      const operatorInput = document.getElementById('swap-operator');
+      operatorInput.value = user ? (user.displayName || user.email || '') : '';
+      operatorInput.placeholder = user ? '' : 'เข้าสู่ระบบด้วย Google ก่อน';
+      if(user) login.style.display = 'none';
       updateAdminUi();
       try{
         await loadState(currentView);
