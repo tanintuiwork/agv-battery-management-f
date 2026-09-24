@@ -691,12 +691,12 @@
     setSyncStatus('ok', 'เชื่อมต่อแล้ว • ' + new Date().toLocaleTimeString('th-TH'));
   }
 
-  async function saveConfig(historyRecord){
+  async function saveConfig(historyRecord, options){
     if(!signedInUser){
       showToast('กรุณาเข้าสู่ระบบด้วย Google ก่อนบันทึก');
       return false;
     }
-    if(!isAdmin && !historyRecord){
+    if(!isAdmin && !historyRecord && !(options && options.operationalAction)){
       showToast('เฉพาะ Admin เท่านั้นที่จัดการข้อมูลแบตเตอรี่ได้');
       return false;
     }
@@ -799,17 +799,19 @@
   }
 
   function batteryActionCell(b){
-    if(!isAdmin) return '<span class="muted">จัดการโดย Admin</span>';
     if(b.status === 'in-use') return '<span class="muted">ใช้งานอยู่ในรถ</span>';
     if(b.status === 'retired') return '<span class="muted">หยุดใช้งาน (จัดการผ่านเมนู "จัดการแบตเตอรี่")</span>';
     if(b.status === 'charging'){
       const remainLabel = getChargeRemainingLabel(b);
+      if(!isAdmin) return `<div class="muted">${remainLabel || 'กำลังชาร์จ'}</div>`;
       return `<div>
         <button type="button" class="btn-xs btn-mark-avail" data-toggle-battery="${b.id}">ทำเครื่องหมายว่าพร้อมใช้งาน</button>
         ${remainLabel ? `<div class="charge-remain">${remainLabel}</div>` : ''}
       </div>`;
     }
-    if(b.status === 'available') return `<button type="button" class="btn-xs btn-mark-charge" data-toggle-battery="${b.id}">ส่งชาร์จ</button>`;
+    if(b.status === 'available') return signedInUser
+      ? `<button type="button" class="btn-xs btn-mark-charge" data-toggle-battery="${b.id}">ส่งชาร์จ</button>`
+      : '<span class="muted">เข้าสู่ระบบเพื่อส่งชาร์จ</span>';
     return '';
   }
 
@@ -831,7 +833,7 @@
   }
 
   function autoCompleteCharging(){
-    if(!isAdmin) return false;
+    if(!signedInUser) return false;
     const now = Date.now();
     let changed = false;
     state.batteries.forEach(b => {
@@ -862,15 +864,16 @@
     renderAgvGrid();
     renderBatteryTable();
     if(changed){
-      saveConfig(); // มีแบตชาร์จครบ 1.5 ชม. เปลี่ยนเป็นพร้อมใช้งานแล้ว ซิงก์ไป Google Sheets
+      saveConfig(null, { operationalAction: true }); // ครบ 1.5 ชั่วโมงแล้วจึงกลับเป็นพร้อมใช้งาน
     }
   }
 
   async function toggleBatteryStatus(id){
-    if(!isAdmin) return;
+    if(!signedInUser){ showToast('กรุณาเข้าสู่ระบบด้วย Google ก่อนส่งชาร์จ'); return; }
     const battery = state.batteries.find(b => b.id === id);
     if(!battery || battery.status === 'in-use') return;
     if(battery.status === 'charging'){
+      if(!isAdmin) return;
       battery.status = 'available';
       battery.chargingStartedAt = null;
     } else if(battery.status === 'available'){
@@ -884,7 +887,7 @@
     const swapAgvVal = document.getElementById('swap-agv').value;
     populateSwapBatterySelect(swapAgvVal);
     showToast(`อัปเดตสถานะ ${id} เป็น "${battery.status === 'available' ? 'พร้อมใช้งาน' : 'กำลังชาร์จ'}"`);
-    saveConfig(); // ซิงก์ไป Google Sheets แบบ background ไม่บล็อก UI
+    saveConfig(null, { operationalAction: true });
   }
 
   // ---------- Battery admin (PIN-gated add/delete/retire) ----------
