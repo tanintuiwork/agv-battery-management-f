@@ -420,6 +420,7 @@
             <th>แบตเตอรี่ใหม่</th>
             <th>ผู้ทำรายการ</th>
             <th>หมายเหตุ</th>
+            <th>จัดการ</th>
           </tr>
         </thead>
         <tbody id="history-table-body"></tbody>
@@ -683,6 +684,13 @@
             renderHistoryTable();
           }
         }, err => setSyncStatus('error', 'อ่านประวัติไม่ได้: ' + err.message));
+        db.ref('history').on('child_removed', snap => {
+          const record = snap.val();
+          if(record){
+            state.history = state.history.filter(h => h.id !== record.id);
+            renderHistoryTable();
+          }
+        }, err => setSyncStatus('error', 'อัปเดตประวัติไม่ได้: ' + err.message));
       }
     }
     if(seedError && !isAdmin){
@@ -1217,7 +1225,7 @@
 
     const el = document.getElementById('history-table-body');
     if(allRows.length === 0){
-      el.innerHTML = '<tr><td colspan="8"><div class="empty-state">ยังไม่มีประวัติการเปลี่ยนแบตเตอรี่ตามเงื่อนไขนี้</div></td></tr>';
+      el.innerHTML = '<tr><td colspan="9"><div class="empty-state">ยังไม่มีประวัติการเปลี่ยนแบตเตอรี่ตามเงื่อนไขนี้</div></td></tr>';
     } else {
       el.innerHTML = visibleRows.map(({type, record: h}) => type === 'ongoing' ? `
         <tr class="ongoing-row">
@@ -1227,6 +1235,7 @@
           <td class="mono">${escapeHtml(h.agvId)}</td>
           <td class="mono">—</td>
           <td class="mono">${h.newBatteryId}</td>
+          <td class="muted">—</td>
           <td class="muted">—</td>
           <td class="muted">—</td>
         </tr>
@@ -1240,6 +1249,7 @@
           <td class="mono">${h.newBatteryId}</td>
           <td>${escapeHtml(h.operator)}</td>
           <td class="${h.remark ? '' : 'muted'}">${escapeHtml(h.remark || '—')}</td>
+          <td>${isAdmin ? `<button type="button" class="btn-xs btn-delete" data-delete-history="${escapeHtml(h.id)}">ลบ</button>` : '<span class="muted">—</span>'}</td>
         </tr>
       `).join('');
     }
@@ -1251,6 +1261,24 @@
       showMoreBtn.textContent = `แสดงเพิ่มเติม (อีก ${Math.min(HISTORY_PAGE_SIZE, hiddenCount)} รายการ)`;
     } else {
       showMoreEl.style.display = 'none';
+    }
+  }
+
+  async function deleteHistoryRecord(id){
+    if(!isAdmin){ showToast('เฉพาะ Admin เท่านั้นที่ลบประวัติได้'); return; }
+    const record = state.history.find(h => h.id === id);
+    if(!record) return;
+    const when = formatDateTime(record.endTime || record.timestamp);
+    const confirmed = window.confirm(`ยืนยันลบประวัติ ${record.agvId} วันที่ ${when} ใช่หรือไม่?\nการลบนี้จะลบเฉพาะแถวประวัติ ไม่ย้อนสถานะรถหรือแบตเตอรี่`);
+    if(!confirmed) return;
+    try{
+      await db.ref('history/' + safeFirebaseKey(id)).remove();
+      state.history = state.history.filter(h => h.id !== id);
+      renderHistoryTable();
+      showToast('ลบรายการประวัติแล้ว');
+    }catch(err){
+      console.error('Delete history failed', err);
+      showToast('ลบไม่สำเร็จ กรุณาตรวจการเชื่อมต่อ');
     }
   }
 
@@ -1429,6 +1457,10 @@
     document.getElementById('history-show-more-btn').addEventListener('click', () => {
       historyVisibleCount += HISTORY_PAGE_SIZE;
       renderHistoryTable();
+    });
+    document.getElementById('history-table-body').addEventListener('click', e => {
+      const btn = e.target.closest('button[data-delete-history]');
+      if(btn) deleteHistoryRecord(btn.dataset.deleteHistory);
     });
     document.getElementById('export-btn').addEventListener('click', exportToExcel);
 
